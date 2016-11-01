@@ -1,11 +1,12 @@
 InterpSpy
 =========
-** About
+
+## About
 
 proof-of-concept plugin for immediate feedback with Python code
 
 
-** Installation
+## Installation
 <!-- this is copy-pasted from sublimeCodeIntel. Thanks for the great description! -->
 
 **With the Package Control plugin:** The easiest way to install `InterpSpy` is through Package Control, which can be found at this site: http://wbond.net/sublime_packages/package_control
@@ -19,16 +20,16 @@ Once you install Package Control, restart Sublime Text and bring up the Command 
 **With Git:** Clone the repository in your Sublime Text Packages directory, located somewhere in user's "Home" directory ::
     git clone https://github.com/bollu/SublimeInterpSpy.git
 
-** Development
+## Development
 
 Help me add more features! The first thing to do is to add support
 for more languages. Implement more `LanguageExtension` instances and
-send me a pull request!
+send me a pull request.
 
-**** NOTE: For a new release to be pushed, it needs to be tagged!
+#### NOTE: For a new release to be pushed, it needs to be tagged!
 
 
-** Future Goals
+## Future Goals
 
 - integrate with [Jupyter](http://jupyter.org/)?
 - Add support for matplotlib to render diagrams
