@@ -5,7 +5,7 @@ RealityCheck
 
 proof-of-concept plugin for immediate feedback with Python code
 
-![Demo GIF](http://imgur.com/a/fRw4K)
+![Demo GIF](http://imgur.com/gallery/kRHYU)
 
 
 ## Installation
