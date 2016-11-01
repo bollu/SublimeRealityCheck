@@ -49,7 +49,8 @@ class PythonEvaluator(LanguageEvaluator):
             exec(string, globals(), namespace)
             return namespace
         except Exception as e:
-            print("tried to exec. %s\nerror: %s" % (string, e))
+            return 
+            # print("tried a exec. %s\nerror: %s" % (string, e))
 
 
     def _try_eval_line(self, line):
@@ -57,7 +58,8 @@ class PythonEvaluator(LanguageEvaluator):
             evalval = eval(line)
             return evalval
         except Exception as e:
-            print("tried to eval |%s|\nerror: %s" % (line, e))
+            return
+            # print("tried to eval |%s|\nerror: %s" % (line, e))
 
 
     def lineinfo(self, line, evaldata):
@@ -93,6 +95,12 @@ class PythonEvaluator(LanguageEvaluator):
             content += "</ul>"
 
         return content
+
+def does_content_exist(content, phantoms):
+    for ps in phantoms:
+        if ps.content == content:
+            return True
+    return False
 
 
 class InterspyCommand(sublime_plugin.ViewEventListener):
@@ -134,14 +142,14 @@ class InterspyCommand(sublime_plugin.ViewEventListener):
     @property
     def evaluator(self):
         syntax = self.view.settings().get('syntax')
-        valid_evals = filter(lambda e: e.can_run_on_syntax(syntax),
-                             self.evals)
+        valid_evals = list(filter(lambda e: e.can_run_on_syntax(syntax),
+                             self.evals))
 
         # unable to find anything in the list, so return
         if not valid_evals:
             return None
 
-        return list(valid_evals)[0]
+        return valid_evals[0]
 
     def on_modified_async(self):
         print("modified: setting an update")
@@ -198,10 +206,12 @@ class InterspyCommand(sublime_plugin.ViewEventListener):
 
             p = sublime.Phantom(line_region, content, sublime.LAYOUT_BELOW)
 
-            # this is a new block, not an old block
-            if not any(ph.content == content for ph in self.phantoms):
+            # if there is another phantom with the same content as us, don't add`
+            if does_content_exist(content, self.phantoms):
+                continue                    
+            else:
+                # remove all old blocks with the same region
                 self.phantoms = list(filter(lambda p: not p.region.intersects(line_region), self.phantoms))
-
                 self.phantoms.append(DataRegion(content, p, line_region))
 
         self.update_phantom_set()
