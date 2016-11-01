@@ -1,4 +1,5 @@
 import sublime
+
 import sublime_plugin
 import cgi
 
@@ -17,10 +18,14 @@ class LanguageEvaluator:
 # TODO: use this to replace the (r, p)
 class DataRegion:
     def __init__(self, content, phantom, region):
+        assert isinstance(content, str)
+        assert isinstance(phantom, sublime.Phantom)
+        assert isinstance(region, sublime.Region)
+
         self._content = content
         self._region = region
         self._phantom = phantom
-    
+
     @property
     def content(self):
         return self._content
@@ -32,6 +37,7 @@ class DataRegion:
     @property
     def phantom(self):
         return self._phantom
+
 
 class PythonEvaluator(LanguageEvaluator):
     def can_run_on_syntax(self, syntax):
@@ -88,36 +94,6 @@ class PythonEvaluator(LanguageEvaluator):
 
         return content
 
-        # try:
-        #     namespace = {}
-        #     exec(string, globals(), namespace)
-        #     namespace = {varname: varval 
-        #                     for varname, varval in namespace.items()
-        #                     if varname in line }
-
-        #     if not namespace:
-        #         raise RuntimeError("namespace e")
-
-        #     content = "<ul>"
-        #     for k in namespace:
-        #         core_content = "%s :: %s" % (k, namespace[k])
-        #         core_content = cgi.escape(core_content)
-        #         content += "<li> <pre> %s </pre> </li>\n" % core_content
-        #     content += "</ul>"
-        #     return content
-        # except Exception as e:
-        #     print("tried to exec. error: %s" % e)
-
-        # # try Eval, will work for most things
-        # try:
-        #     evalval = eval(string)
-        #     content = "%s :: %s" % (evalval, type(evalval).__name__)
-        #     return content
-        # except Exception as e:
-        #     print("tried to eval. error: %s" % e)
-
-
-
 
 class InterspyCommand(sublime_plugin.ViewEventListener):
     def __init__(self, view):
@@ -125,8 +101,16 @@ class InterspyCommand(sublime_plugin.ViewEventListener):
         self._phantoms = []
 
         self.pset = sublime.PhantomSet(self.view)
-
         self.evals = [PythonEvaluator()]
+        self.should_update = True
+        self.stall_update = False
+
+        sublime.set_timeout_async(self.run_process, 500)
+
+    def update_phantom_set(self):
+        ps = [d.phantom for d in self._phantoms]
+        self.pset.update(ps)
+
 
     @property
     def phantoms(self):
@@ -137,8 +121,7 @@ class InterspyCommand(sublime_plugin.ViewEventListener):
         assert isinstance(value, list)
         self._phantoms = value
 
-        ps = [p for (r, p) in self._phantoms]
-        self.pset.update(ps)
+        self.update_phantom_set()
 
     @property
     def fileregion(self):
@@ -160,7 +143,26 @@ class InterspyCommand(sublime_plugin.ViewEventListener):
 
         return list(valid_evals)[0]
 
-    def on_modified(self):
+    def on_modified_async(self):
+        print("modified: setting an update")
+        self.stall_update = True
+        self.should_update = True
+
+        def reset_update():
+            self.stall_update = False
+
+        # do not allow ourselves to update for the next 200ms
+        sublime.set_timeout_async(reset_update, 80)
+
+    def run_process(self):
+        sublime.set_timeout_async(self.run_process, 500)
+
+
+        if (not self.should_update) or self.stall_update:
+            return
+        else:
+            self.should_update = False
+
         cursor = self.view.sel()[0]
         cursor_line_region = self.view.line(cursor)
 
@@ -168,10 +170,9 @@ class InterspyCommand(sublime_plugin.ViewEventListener):
             return
 
         # evaluate the entire file and cache the eval data
-        print("\n!!evaling: %s" % self.filestr)
         evaldata = self.evaluator.process_file(self.filestr)
         # reset all phantoms
-        self.phantoms = []
+        # self.phantoms = []
 
 
         # find all regions to add hints
@@ -186,7 +187,6 @@ class InterspyCommand(sublime_plugin.ViewEventListener):
             linestr = self.view.substr(line_region)
             content = None
 
-            print("linestr: %s" % (linestr))
 
             # remove old phantoms that were on the same line
 
@@ -196,12 +196,15 @@ class InterspyCommand(sublime_plugin.ViewEventListener):
             if content is None:
                 continue
 
-            print("content: %s" % content)
             p = sublime.Phantom(line_region, content, sublime.LAYOUT_BELOW)
 
-            self.phantoms.append((line_region, p))
-            
-        ps = [p for (r, p) in self._phantoms]
-        self.pset.update(ps)
+            # this is a new block, not an old block
+            if not any(ph.content == content for ph in self.phantoms):
+                self.phantoms = list(filter(lambda p: not p.region.intersects(line_region), self.phantoms))
+
+                self.phantoms.append(DataRegion(content, p, line_region))
+
+        self.update_phantom_set()
+
 
 
