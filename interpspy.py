@@ -37,7 +37,7 @@ class PythonEvaluator(LanguageEvaluator):
     def can_run_on_syntax(self, syntax):
         return "python" in syntax.lower()
 
-    def eval(self, string):
+    def process_file(self, string):
         try:
             namespace = {}
             exec(string, globals(), namespace)
@@ -45,26 +45,30 @@ class PythonEvaluator(LanguageEvaluator):
         except Exception as e:
             print("tried to exec. %s\nerror: %s" % (string, e))
 
+
+    def _try_eval_line(self, line):
         try:
-            evalval = {"__eval__": eval(string)}
+            evalval = eval(line)
             return evalval
         except Exception as e:
-            print("tried to eval %s\nerror: %s" % (string, e))
+            print("tried to eval |%s|\nerror: %s" % (line, e))
+
 
     def lineinfo(self, line, evaldata):
-        assert evaldata is not None
+
 
         content = ""
-        if "__eval__" in evaldata:
-            print("__eval__ present")
-            val = evaldata["__eval__"]
+
+        # try an eval
+        evalval = self._try_eval_line(line)
+        if evalval:
             content += "<li><pre>"
-            core_content = "%s :: %s" % (val, type(val).__name__)
+            core_content = "%s :: %s" % (evalval, type(evalval).__name__)
             core_content = cgi.escape(core_content)
             content += core_content
             content += "</li></pre>"
-
-        else:
+        # exec had succeeded
+        elif evaldata:
 
             evaldata = {varname: varval
                         for varname, varval in evaldata.items()
@@ -136,10 +140,13 @@ class InterspyCommand(sublime_plugin.ViewEventListener):
         ps = [p for (r, p) in self._phantoms]
         self.pset.update(ps)
 
+    @property
+    def fileregion(self):
+        return sublime.Region(0, self.view.size() + 1)
 
     @property
     def filestr(self):
-        return self.view.substr(sublime.Region(0, self.view.size()))
+        return self.view.substr(self.fileregion)
 
     @property
     def evaluator(self):
@@ -155,24 +162,26 @@ class InterspyCommand(sublime_plugin.ViewEventListener):
 
     def on_modified(self):
         cursor = self.view.sel()[0]
-        cursor_region = self.view.line(cursor)
+        cursor_line_region = self.view.line(cursor)
 
         if not self.evaluator:
             return
 
         # evaluate the entire file and cache the eval data
-        evaldata = self.evaluator.eval(self.filestr)
-        if not evaldata:
-            return
-
+        print("\n!!evaling: %s" % self.filestr)
+        evaldata = self.evaluator.process_file(self.filestr)
         # reset all phantoms
         self.phantoms = []
 
 
-        # find all assignments
-        assignments = self.view.find_all('=')
+        # find all regions to add hints
+        # hint_regions = self.view.find_all('=')
+        # cursor is not being hinted, add it
+        # if not any(cursor.intersects(r) for r in hint_regions):
+        # hint_regions.append(cursor_line_region)
+        hint_regions = self.view.lines(self.fileregion)
 
-        for r in assignments:
+        for r in hint_regions:
             line_region = self.view.line(r.b)
             linestr = self.view.substr(line_region)
             content = None
