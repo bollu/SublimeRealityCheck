@@ -1,0 +1,19 @@
+Thank you for installing InterpSpy
+
+to quickly check that it's working, change the syntax of this file to Python
+by hitting `Ctrl/Command + Shift + P` and typing `Set Syntax: Python`.
+
+1 + 1
+
+x = 2 * 10
+
+You should see the computed values of both those expressions under them
+
+
+If you have any questions, comments, or run into issues, please do tell.
+github: https://github.com/bollu/SublimeInterpSpy
+
+Thanks,
+~Siddharth
+
+

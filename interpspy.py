@@ -84,7 +84,7 @@ class PythonEvaluator(LanguageEvaluator):
             if not evaldata:
                 return None
 
-            content = "<ul>"
+            content = "<ul style='max-width: 300px; word-wrap:break-word'>"
             for k in evaldata:
                 core_content = "%s :: %s" % (k, evaldata[k])
                 core_content = cgi.escape(core_content)
