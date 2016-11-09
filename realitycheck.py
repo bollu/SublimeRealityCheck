@@ -1,7 +1,9 @@
 import sublime
+import traceback
 
 import sublime_plugin
 import cgi
+import copy
 
 # https://github.com/commercialhaskell/intero/blob/master/elisp/intero.el#L1148
 
@@ -15,7 +17,6 @@ class LanguageEvaluator:
                                   "of LanguageEvaluator")
 
 
-# TODO: use this to replace the (r, p)
 class DataRegion:
     def __init__(self, content, phantom, region):
         assert isinstance(content, str)
@@ -43,43 +44,46 @@ class PythonEvaluator(LanguageEvaluator):
     def can_run_on_syntax(self, syntax):
         return "python" in syntax.lower()
 
-    def process_file(self, string):
-        try:
-            namespace = {}
-            exec(string, globals(), namespace)
-            return namespace
-        except Exception as e:
-            return 
-            # print("tried a exec. %s\nerror: %s" % (string, e))
+    def clear_context(self):
+        self.globalvals = {}
+        self.expr_to_eval_map = {}
 
+    def eval_line(self, line):
 
-    def _try_eval_line(self, line):
+        print("line: %s | globals: %s" % (line, self.globalvals))
         try:
-            evalval = eval(line)
-            return evalval
+            # update globals and locals
+            exec(line, self.globalvals)
+
+            # assuming it's an expression, evaluate it and save it
+            if not "=" in line:
+                print("|%s| does not have =" % line)
+                DUMMY_LHS_NAME = "dummy_lhs"
+
+                globals_copy = copy.copy(self.globalvals)
+                exec("%s = %s" % (DUMMY_LHS_NAME, line), globals_copy)
+                self.expr_to_eval_map[line] = globals_copy[DUMMY_LHS_NAME]
         except Exception as e:
             return
-            # print("tried to eval |%s|\nerror: %s" % (line, e))
 
 
-    def lineinfo(self, line, evaldata):
-
-
-        content = ""
+    def get_line_display_str(self, line):
 
         # try an eval
-        evalval = self._try_eval_line(line)
+        evalval = self.expr_to_eval_map[line] if line in self.expr_to_eval_map else None
+        content = ""
+
         if evalval:
             content += "<li><pre>"
             core_content = "%s :: %s" % (evalval, type(evalval).__name__)
             core_content = cgi.escape(core_content)
             content += core_content
             content += "</li></pre>"
+            return content
         # exec had succeeded
-        elif evaldata:
-
+        else:
             evaldata = {varname: varval
-                        for varname, varval in evaldata.items()
+                        for varname, varval in self.globalvals.items()
                         if varname in line}
 
             # line has no valid variables
@@ -88,7 +92,8 @@ class PythonEvaluator(LanguageEvaluator):
 
             content = "<ul style='max-width: 300px; word-wrap:break-word'>"
             for k in evaldata:
-                core_content = "%s :: %s" % (k, evaldata[k])
+                core_content = "%s: %s :: %s" % \
+                                (k, evaldata[k], type(evaldata[k]))
                 core_content = cgi.escape(core_content)
 
                 content += "<li> <pre> %s </pre> </li>\n" % core_content
@@ -102,7 +107,6 @@ def does_content_exist(content, phantoms):
             return True
     return False
 
-
 class InterspyCommand(sublime_plugin.ViewEventListener):
     def __init__(self, view):
         self.view = view
@@ -113,12 +117,12 @@ class InterspyCommand(sublime_plugin.ViewEventListener):
         self.should_update = True
         self.stall_update = False
 
+        print("initing.")
         sublime.set_timeout_async(self.run_process, 500)
 
     def update_phantom_set(self):
         ps = [d.phantom for d in self._phantoms]
         self.pset.update(ps)
-
 
     @property
     def phantoms(self):
@@ -143,7 +147,7 @@ class InterspyCommand(sublime_plugin.ViewEventListener):
     def evaluator(self):
         syntax = self.view.settings().get('syntax')
         valid_evals = list(filter(lambda e: e.can_run_on_syntax(syntax),
-                             self.evals))
+                                  self.evals))
 
         # unable to find anything in the list, so return
         if not valid_evals:
@@ -157,64 +161,61 @@ class InterspyCommand(sublime_plugin.ViewEventListener):
         self.should_update = True
 
         def reset_update():
-            self.stall_update = False
+            if self.stall_update:
+                self.stall_update = False
 
-        # do not allow ourselves to update for the next 200ms
-        sublime.set_timeout_async(reset_update, 80)
+        # do not allow ourselves to update for some ms
+        sublime.set_timeout_async(reset_update, 20)
 
     def run_process(self):
-        sublime.set_timeout_async(self.run_process, 500)
 
-
-        if (not self.should_update) or self.stall_update:
+        if not self.should_update:
+            sublime.set_timeout_async(self.run_process, 10)
             return
         else:
-            self.should_update = False
+            if self.stall_update:
+                sublime.set_timeout_async(self.run_process, 10)
+            else:
+                sublime.set_timeout_async(self.run_process, 10)
 
-        cursor = self.view.sel()[0]
-        cursor_line_region = self.view.line(cursor)
+            self.should_update = False
 
         if not self.evaluator:
             return
 
         # evaluate the entire file and cache the eval data
-        evaldata = self.evaluator.process_file(self.filestr)
+        # evaldata = self.evaluator.process_file(self.filestr)
         # reset all phantoms
-        # self.phantoms = []
-
 
         # find all regions to add hints
-        # hint_regions = self.view.find_all('=')
-        # cursor is not being hinted, add it
-        # if not any(cursor.intersects(r) for r in hint_regions):
-        # hint_regions.append(cursor_line_region)
         hint_regions = self.view.lines(self.fileregion)
+
+        self.evaluator.clear_context()
 
         for r in hint_regions:
             line_region = self.view.line(r.b)
             linestr = self.view.substr(line_region)
-            content = None
 
+            self.evaluator.eval_line(linestr)
+            contentstr = self.evaluator.get_line_display_str(linestr) 
 
-            # remove old phantoms that were on the same line
-
-            content = self.evaluator.lineinfo(linestr, evaldata)
-            
             # evaluator failed. return None
-            if content is None:
+            if contentstr is None:
                 continue
 
-            p = sublime.Phantom(line_region, content, sublime.LAYOUT_BELOW)
+            p = sublime.Phantom(line_region, contentstr, sublime.LAYOUT_BELOW)
 
-            # if there is another phantom with the same content as us, don't add`
-            if does_content_exist(content, self.phantoms):
-                continue                    
+            # if there is another phantom with
+            # the same contentstr as us, don't add`
+            if does_content_exist(contentstr, self.phantoms):
+                continue
             else:
                 # remove all old blocks with the same region
-                self.phantoms = list(filter(lambda p: not p.region.intersects(line_region), self.phantoms))
-                self.phantoms.append(DataRegion(content, p, line_region))
+                self.phantoms = \
+                        list(filter(lambda p:
+                                    not p.region.intersects(line_region),
+                                    self.phantoms))
+
+                self.phantoms.append(DataRegion(contentstr, p, line_region))
 
         self.update_phantom_set()
-
-
-
