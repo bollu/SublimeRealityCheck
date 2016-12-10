@@ -116,3 +116,6 @@ tramp
 # elpa packages
 /elpa/
 
+
+# tags
+tags
